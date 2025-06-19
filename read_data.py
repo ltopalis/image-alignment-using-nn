@@ -1,18 +1,21 @@
 import os
 import glob
 import json
+import torch
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from torch.utils.data import Dataset
+from torchvision.transforms import functional as TF
 
 
-class dataLoader_COCO(Dataset):
+class dataSet_COCO(Dataset):
 
-    def __init__(self, dataset_name="train"):
+    def __init__(self, dataset_name="train", target_size=(192, 192)):
 
         _root_folder = "/Users/ltopalis/Library/CloudStorage/GoogleDrive-lazarostop32@gmail.com/Το Drive μου/THESIS/Dataset/MS-COCO"
+        self.target_size = target_size
 
         if dataset_name == "train":
             self.img_path = glob.glob(
@@ -48,6 +51,23 @@ class dataLoader_COCO(Dataset):
         template_img = plt.imread(os.path.join(
             self.template_path, img_name)) / 255.0
 
+        if input_img.ndim == 3:
+            input_img = TF.rgb_to_grayscale(
+                torch.tensor(input_img).permute(2, 0, 1))
+        else:
+            input_img = torch.tensor(input_img).permute(2, 0, 1)
+
+        if template_img.ndim == 3:
+            template_img = TF.rgb_to_grayscale(
+                torch.tensor(template_img).permute(2, 0, 1))
+        else:
+            template_img = torch.tensor(template_img).permute(2, 0, 1)
+
+        input_img = TF.resize(input_img, self.target_size)
+        template_img = TF.resize(template_img, self.target_size)
+
+        inp = torch.cat([input_img, template_img], dim=0)
+
         with open(os.path.join(self.label_path, f"{img_name[:(len(img_name)-4)]}_label.txt"), "r") as f:
             data = json.load(f)
 
@@ -56,4 +76,4 @@ class dataLoader_COCO(Dataset):
         y_list = [data['location'][0]['top_left_y'], data['location'][1]['top_right_y'],
                   data['location'][3]['bottom_right_y'], data['location'][2]['bottom_left_y']]
 
-        return np.asarray(input_img).astype(np.float32), np.asarray(template_img).astype(np.float32), np.asarray(x_list).astype(np.float32), np.asarray(y_list).astype(np.float32)
+        return np.asarray(inp).astype(np.float32), np.asarray(x_list).astype(np.float32), np.asarray(y_list).astype(np.float32)
