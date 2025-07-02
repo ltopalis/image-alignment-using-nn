@@ -1,11 +1,12 @@
+import cv2
 import torch
 
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class Level_1(nn.Module):
-    # out_channels = 8 -> Homography, out_channels = 4 -> affine
     def __init__(self, out_channels=8, device='cpu'):
         super(Level_1, self).__init__()
 
@@ -14,7 +15,7 @@ class Level_1(nn.Module):
 
         # Stride = 2 for Downsampling
 
-        self.conv1a = nn.Conv2d(2, 32, kernel_size=3,
+        self.conv1a = nn.Conv2d(1, 32, kernel_size=3,
                                 stride=2, padding=1, device=self.device)
         self.bn_1a = nn.BatchNorm2d(32)
 
@@ -50,14 +51,17 @@ class Level_1(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
-    def forward(self, x):
-        # input [batch, 2, H, W]
+    def forward(self, x, initial_motion=False):
+        # input [batch, 1, H, W]
         x = F.leaky_relu(self.bn_1a(self.conv1a(x)), negative_slope=.1)
         x = F.leaky_relu(self.bn_1b(self.conv1b(x)), negative_slope=.1)
         x = F.leaky_relu(self.bn_1c(self.conv1c(x)), negative_slope=.1)
         x = F.leaky_relu(self.bn_1d(self.conv1d(x)), negative_slope=.1)
         x = F.leaky_relu(self.bn_1e(self.conv1e(x)), negative_slope=.1)
         x = F.leaky_relu(self.bn_1f(self.conv1f(x)), negative_slope=.1)
+
+        if initial_motion:
+            return x
 
         out = self.output(x)  # [batch, 8, H', W']
 
@@ -217,7 +221,3 @@ class Level_4(nn.Module):
         out = self.output(x)  # [batch, 8, H', W']
 
         return out
-
-
-def pixel_ecc_layer():
-    pass
