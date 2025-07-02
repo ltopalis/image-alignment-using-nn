@@ -66,8 +66,6 @@ class dataSet_COCO(Dataset):
         input_img = TF.resize(input_img, self.target_size)
         template_img = TF.resize(template_img, self.target_size)
 
-        inp = torch.cat([input_img, template_img], dim=0)
-
         with open(os.path.join(self.label_path, f"{img_name[:(len(img_name)-4)]}_label.txt"), "r") as f:
             data = json.load(f)
 
@@ -76,4 +74,5 @@ class dataSet_COCO(Dataset):
         y_list = [data['location'][0]['top_left_y'], data['location'][1]['top_right_y'],
                   data['location'][3]['bottom_right_y'], data['location'][2]['bottom_left_y']]
 
-        return np.asarray(inp).astype(np.float32), np.asarray(x_list).astype(np.float32), np.asarray(y_list).astype(np.float32)
+        return (np.asarray(input_img).astype(np.float32), np.asarray(template_img).astype(np.float32),
+                np.asarray(x_list).astype(np.float32), np.asarray(y_list).astype(np.float32))
