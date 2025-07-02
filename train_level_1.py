@@ -2,8 +2,9 @@ import os
 import torch
 import argparse
 
-from net import Level_1
 from read_data import *
+from initialMotion import HomographyRegressionHead
+from featureExtractor import Level_1
 from torch.utils.data import DataLoader
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -16,9 +17,13 @@ parser.add_argument("--dataset_name", action="store",
 parser.add_argument("--batch_size", action="store",
                     dest="batch_size", type=int, default=8, help="batch_size")
 parser.add_argument("--output_channels", action="store", type=int,
-                    dest="output_channels", default=8, help="8 -> homography, 4 -> affine")
+                    dest="output_channels", default=8, help="number of features")
 parser.add_argument("--num_epochs", action="store", dest="num_epochs",
                     type=int, default=1, help="how many epochs to train")
+parser.add_argument("--epoch_start", action="store", dest="epoch_start",
+                    type=int, default=20, help="train from which epoch")
+parser.add_argument("--learning_rate", action="store", dest="lr",
+                    type=float, default=0.001, help="learning rate for Adam optimizer")
 
 input_args = parser.parse_args()
 
@@ -31,16 +36,31 @@ if not os.path.exists(save_folder):
 network_level_1 = Level_1(
     out_channels=input_args.output_channels, device=device)
 
+if input_args.epoch_start > 1:
+    load_path = os.path.join(
+        save_folder, f"epoch_{input_args.epoch_start - 1}_model.pth")
+
+    if not os.path.exists(load_path):
+        raise FileExistsError(
+            f"Epoch {input_args.epoch_start - 1} doesn't exist!")
+
+    model_weights = torch.load(load_path, weights_only=True)
+    network_level_1.load_state_dict(model_weights)
+
 if input_args.dataset_name == "MSCOCO":
     dataset = dataSet_COCO("train")
 
 dataloader = DataLoader(
     dataset, batch_size=input_args.batch_size, shuffle=True)
 
-for epoch in range(input_args.num_epochs):
-    for inp, x, y in dataloader:
-        a = network_level_1(inp)
-        print(a.size())
-        break
+for epoch in range(input_args.num_epochs - input_args.epoch_start + 1):
 
+    for inp, template, x, y in dataloader:
+        F_I = network_level_1(inp)
+        F_T = network_level_1(template)
+
+        break
     break
+    save_path = os.path.join(
+        save_folder, f"epoch_{input_args.epoch_start + epoch}_model.pth")
+    torch.save(network_level_1.state_dict(), save_path)
