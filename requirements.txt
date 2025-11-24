@@ -1,6 +1,0 @@
-numpy
-scikit-image
-matplotlib
-opencv-python
-torch
-torchvision
