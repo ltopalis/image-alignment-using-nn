@@ -6,6 +6,7 @@ from read_data import *
 from initialMotion import HomographyRegressionHead
 from featureExtractor import Level_1
 from torch.utils.data import DataLoader
+from pixel_ECC import pixel_ecc
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Number of GPUs: {torch.cuda.device_count()}")
@@ -24,6 +25,13 @@ parser.add_argument("--epoch_start", action="store", dest="epoch_start",
                     type=int, default=20, help="train from which epoch")
 parser.add_argument("--learning_rate", action="store", dest="lr",
                     type=float, default=0.001, help="learning rate for Adam optimizer")
+<<<<<<< Updated upstream
+=======
+parser.add_argument("--steps", action="store", dest="steps",
+                    type=int, default=200, help="number of iterations")
+parser.add_argument("--loss_type", action="store", dest="loss",
+                    default="l2", help="loss function - l1, l2, linf")
+>>>>>>> Stashed changes
 
 input_args = parser.parse_args()
 
@@ -59,6 +67,15 @@ for epoch in range(input_args.num_epochs - input_args.epoch_start + 1):
         F_I = network_level_1(inp)
         F_T = network_level_1(template)
 
+<<<<<<< Updated upstream
+=======
+        initial_motion = torch.Tensor(
+            [[1, 0, 0, 0, 1, 0, 0, 0]for _ in range(input_args.batch_size)]).float()
+
+        pixel_ecc(F_T, F_I, initial_motion, input_args.lr,
+                  input_args.steps, input_args.loss)
+
+>>>>>>> Stashed changes
         break
     break
     save_path = os.path.join(
