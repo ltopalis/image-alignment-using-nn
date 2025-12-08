@@ -132,24 +132,6 @@ if __name__ == "__main__":
         dtype=dt, device=dev).unsqueeze(0).unsqueeze(0)
     warped = torch.cat([warped, warped2], dim=0)
 
-    # plt.figure()
-
-    # plt.subplot(1, 2, 1)
-    # plt.imshow(img.squeeze().detach().cpu(), cmap=plt.cm.gray)
-    # plt.axis('off')
-    # plt.tight_layout()
-
-    # plt.subplot(1, 2, 2)
-    # plt.imshow(warped.squeeze().detach().cpu(), cmap=plt.cm.gray)
-    # plt.axis('off')
-    # plt.tight_layout()
-    # plt.show()
-
-    # a = loadmat('data/s.mat')
-
-    # warped = a['img']
-    # img = a['tmplt']
-
     a = compute_initial_motion(img, warped, levels=4)
 
     print(a)

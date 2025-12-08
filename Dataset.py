@@ -102,22 +102,23 @@ class Dataset(torch.utils.data.Dataset):
         return self.num_samples
 
 
-class H5Dataset(Dataset):
+class H5Dataset(torch.utils.data.Dataset):
     def __init__(self, h5_path, keys=('img', 'tmplt', 'M', 'test_pts', 'template_affine'),
-                 dtype=torch.float32, device='cpu'):
+                 dtype=torch.float32):
         self.h5_path = h5_path
         self._file = None
         self._len = None
         self.keys = list(keys)
         self.dtype = dtype
-        self.device = device
 
     def _ensure_open(self):
         if self._file is None:
+            import h5py
             self._file = h5py.File(self.h5_path, 'r')
 
     def __len__(self):
         if self._len is None:
+            import h5py
             with h5py.File(self.h5_path, 'r') as f:
                 self._len = f[self.keys[0]].shape[0]
         return int(self._len)
@@ -130,7 +131,7 @@ class H5Dataset(Dataset):
         sample = {}
         for k in self.keys:
             arr = self._file[k][idx]
-            t = torch.as_tensor(arr, dtype=self.dtype)
+            t = torch.as_tensor(arr, dtype=self.dtype)  # πάντα CPU
             sample[k] = t
         sample['idx'] = int(idx)
         return sample

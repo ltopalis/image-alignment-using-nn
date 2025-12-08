@@ -10,17 +10,21 @@ from CPEN import CPEN
 from Dataset import H5Dataset, collate_batch
 from pixel_ecc_affine.ComputePointError import ComputePointError
 
+torch.set_default_device('cpu')
+
 if __name__ == '__main__':
+    # dt = torch.float64
     dt = torch.float32
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     num_epochs = 20
+    batch = 3
     save_path = os.path.join(".", "pretrained_models")
     h5_path = 'data/dataset/data.h5'
 
     os.makedirs(save_path, exist_ok=True)
 
-    full_ds = H5Dataset(h5_path, dtype=dt, device=dev)
+    full_ds = H5Dataset(h5_path, dtype=dt)
     N = len(full_ds)
     n_train = int(0.8 * N)
     n_test = N - n_train
@@ -28,11 +32,11 @@ if __name__ == '__main__':
     train_ds, test_ds = random_split(full_ds, [n_train, n_test],
                                      generator=torch.Generator().manual_seed(42))
 
-    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True,
+    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True,
                               num_workers=4, pin_memory=torch.cuda.is_available(),
                               persistent_workers=True, prefetch_factor=2,
                               collate_fn=collate_batch)
-    test_loader = DataLoader(test_ds, batch_size=2, shuffle=False,
+    test_loader = DataLoader(test_ds, batch_size=batch, shuffle=False,
                              num_workers=2, pin_memory=torch.cuda.is_available(),
                              persistent_workers=True, collate_fn=collate_batch)
 
@@ -67,8 +71,6 @@ if __name__ == '__main__':
     model = model.to(device=dev, dtype=dt)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-    m = torch.zeros((2, 2, 3), dtype=dt, device=dev)
 
     results = {}
     avg_loss = []
@@ -114,6 +116,7 @@ if __name__ == '__main__':
             #     [template_affine1, template_affine2], dim=0).squeeze(1)
 
             pred = model(img, tmplt)
+            m = torch.zeros((pred.shape[0], 2, 3), dtype=dt, device=dev)
             rms = ComputePointError(test_pts, template_affine, pred, m)
 
             loss = rms.mean()

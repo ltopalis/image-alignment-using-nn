@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 torch.set_default_dtype(torch.float32)
 torch.set_printoptions(precision=12)
-torch.use_deterministic_algorithms(True)
+torch.use_deterministic_algorithms(False)
 torch.set_default_device(torch.device(
     'cuda' if torch.cuda.is_available() else 'cpu'))
 

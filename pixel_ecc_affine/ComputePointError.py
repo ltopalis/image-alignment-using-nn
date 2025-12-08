@@ -9,16 +9,17 @@ def ComputePointError(test_pts: torch.Tensor,
                       template_affine: torch.Tensor,
                       warp_p: torch.Tensor,
                       m: torch.Tensor):
+    dev, dt = test_pts.device, test_pts.dtype
     B = test_pts.shape[0]
 
     warp_p = warp_p - m
-    M = torch.zeros((B, 3, 3))
+    M = torch.zeros((B, 3, 3), device=dev, dtype=dt)
     M[:, :2, :] = warp_p
     M[:,  2, 2] = 1
     M[:,  0, 0] += 1
     M[:,  1, 1] += 1
 
-    tmplt_affine = torch.ones((B, 3, 3))
+    tmplt_affine = torch.ones((B, 3, 3), device=dev, dtype=dt)
     tmplt_affine[:, :2, :] = template_affine
     iteration_pts = M @ tmplt_affine
 

@@ -7,7 +7,7 @@ from .param_update import param_update
 
 torch.set_default_dtype(torch.float32)
 torch.set_printoptions(precision=12)
-torch.use_deterministic_algorithms(True)
+torch.use_deterministic_algorithms(False)
 torch.set_default_device(torch.device(
     'cuda' if torch.cuda.is_available() else 'cpu'))
 
@@ -72,7 +72,7 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
         p += torch.eye(3, device=dev, dtype=dt).repeat(B, C, 1, 1)
 
         noi = ((levels - l) ** 2 + 1) * 30 // 2 ** l
-        # noi = 14
+        noi = 14
 
         tmplt = template.clone().contiguous()
         qtmplt = qtemplate.clone()
@@ -376,7 +376,7 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
 
             warp = param_update(warp, Dp, 'affine')
             fitt.append({'warp_p': warp[:, :, :2, :]})
-            Dps = torch.zeros(B, C, 3, 3)
+            Dps = torch.zeros(B, C, 3, 3).to(device=dev)
             Dps[:, :, :2, :] = Dp
             p = p + Dps
 

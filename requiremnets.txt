@@ -3,9 +3,5 @@ scipy
 matplotlib
 torchvision
 scikit-image
-imagehash
-kornia
 opencv-python
-requests
-tqdm
 h5py
