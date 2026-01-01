@@ -1,6 +1,6 @@
 import torch
 
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 torch.set_default_device(torch.device(
     'cuda' if torch.cuda.is_available() else 'cpu'))
 

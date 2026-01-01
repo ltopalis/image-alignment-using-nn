@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 torch.set_printoptions(precision=12)
 torch.use_deterministic_algorithms(False)
 torch.set_default_device(torch.device(

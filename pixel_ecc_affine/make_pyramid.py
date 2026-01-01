@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from kornia.filters import gaussian_blur2d
 
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 torch.set_default_device(torch.device(
     'cuda' if torch.cuda.is_available() else 'cpu'))
 
