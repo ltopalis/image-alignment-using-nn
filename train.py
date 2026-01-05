@@ -7,24 +7,23 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader, random_split
 from CPEN import CPEN
-from Dataset import H5Dataset, collate_batch
+from Dataset import FirstDataset, collate_batch
 from pixel_ecc_affine.ComputePointError import ComputePointError
 
 torch.set_default_device('cpu')
 
 if __name__ == '__main__':
-    # dt = torch.float64
-    dt = torch.float32
+    dt = torch.float64
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     num_epochs = 20
     batch = 3
     save_path = os.path.join(".", "pretrained_models")
-    h5_path = 'data/dataset/data.h5'
+    h5_path = '/home/ltopalis/Desktop/image-alignment-using-nn/dataset_matlab.hdf5'
 
     os.makedirs(save_path, exist_ok=True)
 
-    full_ds = H5Dataset(h5_path, dtype=dt)
+    full_ds = FirstDataset(h5_path)
     N = len(full_ds)
     n_train = int(0.8 * N)
     n_test = N - n_train
@@ -39,30 +38,6 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_ds, batch_size=batch, shuffle=False,
                              num_workers=2, pin_memory=torch.cuda.is_available(),
                              persistent_workers=True, collate_fn=collate_batch)
-
-    # data_mat = loadmat(
-    #     '/Users/ltopalis/Library/Mobile Documents/com~apple~CloudDocs/Documents/THESIS/IMPLEMENTATION/5 - pixel-ECC/to_dimitri_run_ecc_pixel/a.mat'
-    # )['data'][0][0]
-
-    # data = []
-    # n_samples = int(data_mat['iter_'][0][0])
-    # for i in range(n_samples):
-    #     data.append({
-    #         'idx': i,
-    #         'img': torch.from_numpy(data_mat['img'][i, :, :]).to(dtype=dt, device=dev),
-    #         'tmplt': torch.from_numpy(data_mat['tmplt'][i, :, :]).to(dtype=dt, device=dev),
-    #         'M_gt': torch.from_numpy(data_mat['M'][i, :, :]).to(dtype=dt, device=dev),
-    #         'test_pts': torch.from_numpy(data_mat['test_pts'][i, :, :]).to(dtype=dt, device=dev),
-    #         'template_affine': torch.from_numpy(data_mat['template_affine'][i, :, :]).to(dtype=dt, device=dev)
-    #     })
-
-    # random.shuffle(data)
-    # split_idx = math.floor(len(data) * 0.8)
-    # if split_idx % 2 == 1:
-    #     split_idx += 1
-
-    # train_data = data[:split_idx]
-    # test_data = data[split_idx:]
 
     print(
         f"Total samples: {N}, Train: {n_train}, Test: {n_test}")
@@ -81,39 +56,15 @@ if __name__ == '__main__':
         print(f'======== epoch: {(epoch + 1):2} ========')
         results[epoch] = {'rms': [], 'idxs': []}
 
-        # random.shuffle(train_data)
-
         model.train()
         epoch_sum_loss = 0.0
         epoch_num_samples = 0
 
-        # n_pairs = len(train_data) // 2
-        # batch_iter = range(0, n_pairs * 2, 2)
-
-        # for i in tqdm(batch_iter, desc=f"Epoch {epoch+1} batches"):
         for data in tqdm(train_loader, desc=f'Epoch {epoch+1} batches'):
             img = data['img'].unsqueeze(1).to(dtype=dt, device=dev)
             tmplt = data['tmplt'].unsqueeze(1).to(dtype=dt, device=dev)
             test_pts = data['test_pts'].to(dtype=dt, device=dev)
             template_affine = data['template_affine'].to(dtype=dt, device=dev)
-            # img1 = train_data[i]['img'].unsqueeze(0).unsqueeze(0)
-            # tmplt1 = train_data[i]['tmplt'].unsqueeze(0).unsqueeze(0)
-            # test_pts1 = train_data[i]['test_pts'].unsqueeze(0).unsqueeze(0)
-            # template_affine1 = train_data[i]['template_affine'].unsqueeze(
-            #     0).unsqueeze(0)
-
-            # img2 = train_data[i + 1]['img'].unsqueeze(0).unsqueeze(0)
-            # tmplt2 = train_data[i + 1]['tmplt'].unsqueeze(0).unsqueeze(0)
-            # test_pts2 = train_data[i + 1]['test_pts'].unsqueeze(0).unsqueeze(0)
-            # template_affine2 = train_data[i +
-            #                               1]['template_affine'].unsqueeze(0).unsqueeze(0)
-
-            # img = torch.cat([img1, img2], dim=0)         # (2,1,H,W)
-            # tmplt = torch.cat([tmplt1, tmplt2], dim=0)  # (2,1,H,W)
-            # test_pts = torch.cat([test_pts1, test_pts2], dim=0).squeeze(
-            #     1)            # (2, N, 2)
-            # template_affine = torch.cat(
-            #     [template_affine1, template_affine2], dim=0).squeeze(1)
 
             pred = model(img, tmplt)
             m = torch.zeros((pred.shape[0], 2, 3), dtype=dt, device=dev)
@@ -194,32 +145,12 @@ if __name__ == '__main__':
 
     model.eval()
     with torch.no_grad():
-        #     n_pairs = len(test_data) // 2
-        #     batch_iter = range(0, n_pairs * 2, 2)
 
         for data in tqdm(test_loader, desc=f"Epoch {epoch+1} batches"):
             img = data['img'].unsqueeze(1).to(dtype=dt, device=dev)
             tmplt = data['tmplt'].unsqueeze(1).to(dtype=dt, device=dev)
             test_pts = data['test_pts'].to(dtype=dt, device=dev)
             template_affine = data['template_affine'].to(dtype=dt, device=dev)
-    #         img1 = test_data[i]['img'].unsqueeze(0).unsqueeze(0)
-    #         tmplt1 = test_data[i]['tmplt'].unsqueeze(0).unsqueeze(0)
-    #         test_pts1 = test_data[i]['test_pts'].unsqueeze(0).unsqueeze(0)
-    #         template_affine1 = test_data[i]['template_affine'].unsqueeze(
-    #             0).unsqueeze(0)
-
-    #         img2 = test_data[i + 1]['img'].unsqueeze(0).unsqueeze(0)
-    #         tmplt2 = test_data[i + 1]['tmplt'].unsqueeze(0).unsqueeze(0)
-    #         test_pts2 = test_data[i + 1]['test_pts'].unsqueeze(0).unsqueeze(0)
-    #         template_affine2 = test_data[i +
-    #                                      1]['template_affine'].unsqueeze(0).unsqueeze(0)
-
-    #         img = torch.cat([img1, img2], dim=0)         # (2,1,H,W)
-    #         tmplt = torch.cat([tmplt1, tmplt2], dim=0)  # (2,1,H,W)
-    #         test_pts = torch.cat([test_pts1, test_pts2], dim=0).squeeze(
-    #             1)            # (2, N, 2)
-    #         template_affine = torch.cat(
-    #             [template_affine1, template_affine2], dim=0).squeeze(1)
 
             pred = model(img, tmplt)
             rms = ComputePointError(test_pts, template_affine, pred, m)
