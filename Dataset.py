@@ -158,17 +158,45 @@ def collate_batch(batch):
     return result
 
 
+class FirstDataset(torch.utils.data.Dataset):
+    def __init__(self, path: str):
+        self.data_path = path
+        self.file = h5py.File(self.data_path, "r")
+        self.length = self.file["M"].shape[0]
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, i):
+        return {
+            "idx": i,
+            'M': torch.from_numpy(self.file['M'][i]).double(),
+            'img': torch.from_numpy(self.file['img'][i]).double(),
+            'tmplt': torch.from_numpy(self.file['tmplt'][i]).double(),
+            'm': torch.from_numpy(self.file['m'][i]).double(),
+            'p_init': torch.from_numpy(self.file['p_init'][i]).double(),
+            'rms_pt_error': torch.tensor(self.file['rms_pt_error'][i]).double(),
+            'rms_pt_init': torch.tensor(self.file['rms_pt_init'][i]).double(),
+            'template_affine': torch.from_numpy(self.file['template_affine'][i]).double(),
+            'test_pts': torch.from_numpy(self.file['test_pts'][i]).double(),
+        }
+
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    d = Dataset('data/d.mat')
+    d = FirstDataset(
+        "/home/ltopalis/Desktop/image-alignment-using-nn/dataset_matlab.hdf5")
+
+    # d = Dataset(
+    #     '/home/ltopalis/Desktop/image-alignment-using-nn/dataset_matlab.hdf5')
 
     j = 1
     for i in range(10):
         a = d[i]
 
-        wimage = a['wimage'].squeeze().detach().cpu()
-        template = a['template'].squeeze().detach().cpu()
+        wimage = a['img'].squeeze().detach().cpu()
+        template = a['tmplt'].squeeze().detach().cpu()
 
         plt.subplot(2, 5, (j % 5) + 1)
         plt.imshow(template, cmap=plt.cm.gray)

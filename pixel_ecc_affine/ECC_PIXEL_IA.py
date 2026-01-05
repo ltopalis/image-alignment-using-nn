@@ -4,10 +4,12 @@ from .spatial_interp import spatial_interp
 from .make_pyramid import make_pyramid
 from .next_level import next_level
 from .param_update import param_update
+from scipy.io import savemat, loadmat
 
-torch.set_default_dtype(torch.float32)
+
+torch.set_default_dtype(torch.float64)
 torch.set_printoptions(precision=12)
-torch.use_deterministic_algorithms(False)
+# torch.use_deterministic_algorithms(True)
 torch.set_default_device(torch.device(
     'cuda' if torch.cuda.is_available() else 'cpu'))
 
@@ -16,7 +18,7 @@ def clamp_det(x, eps):
     return torch.sign(x) * torch.clamp(x.abs(), min=eps)
 
 
-def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tensor):
+def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tensor, in_levels: int = 3):
     dt = wimage.dtype
     dev = wimage.device
     eps = torch.finfo(dt).eps
@@ -24,9 +26,11 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
     B, C, wH, wW = wimage.shape
     B, C, tH, tW = template.shape
 
+    a = dict()
+
     h = fspecial('gaussian', 3, sigma=.5, dtype=dt, device=dev)
     hh = fspecial('gaussian', 21, sigma=2, dtype=dt, device=dev)
-    levels = 1
+    levels = in_levels
     type_ = 'gaussian'
 
     template = template / (filter2(hh, template) + eps)
@@ -61,7 +65,7 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
     warp[:, :, :2, :] = init.clone()
 
     for l in range(levels - 1):
-        warp = next_level(warp, 'affine', False)
+        warp = next_level(warp, 'affine', True)
 
     for l in range(levels, 0, -1):
         template = template_pyr[l - 1].clone()
@@ -76,7 +80,7 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
 
         tmplt = template.clone().contiguous()
         qtmplt = qtemplate.clone()
-        tmplt = tmplt[:, :, :-29, :-29]
+        # tmplt = tmplt[:, :, :-29, :-29]
         ker = fspecial('gaussian', 2 ** (levels - l + 5) +
                        1, sigma=1, dtype=dt, device=dev)
         ker1 = fspecial('gaussian', 2 ** 2 + 1, sigma=4, dtype=dt, device=dev)
@@ -323,52 +327,33 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             r = (V.permute(0, 1, 3, 2) @ b.unsqueeze(-1))
             M = (c - b).abs().amax(dim=2)
 
-            Dp = torch.zeros((B, C, 6), dtype=dt, device=dev)
-            for batch in range(B):
-                for channel in range(C):
-                    cond = Detector[batch, channel, :, :]
-                    c_ = c[batch, channel, :]
-                    lambda_ = c_[cond.permute(1, 0).reshape(-1)]
-                    T1 = T[batch, channel, :, :]
-                    T1 = T1[cond.permute(1, 0).reshape(-1), :]
-                    b1 = b[batch, channel, :]
-                    b1 = b1[cond.permute(1, 0).reshape(-1)]
+            cond = Detector.clone().to(torch.bool)
+            lambda_ = c[cond.permute(0, 1, 3, 2).reshape(
+                B, C, -1)].unsqueeze(-1)
+            T1 = T[cond.permute(0, 1, 3, 2).reshape(B, C, -1), :]
+            b1 = b[cond.permute(0, 1, 3, 2).reshape(B, C, -1)].unsqueeze(-1)
 
-                    V, S, U = torch.linalg.svd(T1, full_matrices=False)
+            if B == 1 and C == 1:
+                lambda_ = lambda_.unsqueeze(0).unsqueeze(0)
+                T1 = T1.unsqueeze(0).unsqueeze(0)
+                b1 = b1.unsqueeze(0).unsqueeze(0)
+            elif B == 1:
+                lambda_ = lambda_.unsqueeze(0)
+                T1 = T1.unsqueeze(0).unsqueeze(0)
+                b1 = b1.unsqueeze(0)
 
-                    # S_inv = torch.diagflat(S).inverse()
-                    S_inv = torch.linalg.pinv(torch.diagflat(S))
-                    V_T = V.permute(1, 0)
-                    U = U.permute(1, 0)
-
-                    Dp[batch, channel, :] = U @ S_inv @ (V_T @ (lambda_ - b1))
-
-            # cond = Detector.clone().to(torch.bool)
-            # lambda_ = c[cond.permute(0, 1, 3, 2).reshape(
-            #     B, C, -1)].unsqueeze(-1)
-            # T1 = T[cond.permute(0, 1, 3, 2).reshape(B, C, -1), :]
-            # b1 = b[cond.permute(0, 1, 3, 2).reshape(B, C, -1)].unsqueeze(-1)
-
-            # if B == 1 and C == 1:
-            #     lambda_ = lambda_.unsqueeze(0).unsqueeze(0)
-            #     T1 = T1.unsqueeze(0).unsqueeze(0)
-            #     b1 = b1.unsqueeze(0).unsqueeze(0)
-            # elif B == 1:
-            #     lambda_ = lambda_.unsqueeze(0)
-            #     T1 = T1.unsqueeze(0).unsqueeze(0)
-            #     b1 = b1.unsqueeze(0)
-
-            # V, S, U = torch.linalg.svd(T1, full_matrices=False)
+            V, S, U = torch.linalg.svd(T1, full_matrices=False)
 
             # S_inv = torch.diagflat(S).inverse()
-            # V_T = V.permute(0, 1, 3, 2)
-            # U = U.permute(0, 1, 3, 2)
-            # if B == 1 and C == 1:
-            #     S_inv = S_inv.unsqueeze(0).unsqueeze(0)
-            # elif B == 1:
-            #     S_inv = S_inv.unsqueeze(0)
+            S_inv = torch.linalg.pinv(torch.diagflat(S))
+            V_T = V.permute(0, 1, 3, 2)
+            U = U.permute(0, 1, 3, 2)
+            if B == 1 and C == 1:
+                S_inv = S_inv.unsqueeze(0).unsqueeze(0)
+            elif B == 1:
+                S_inv = S_inv.unsqueeze(0)
 
-            # Dp = U @ S_inv @ (V_T @ (lambda_ - b1))
+            Dp = U @ S_inv @ (V_T @ (lambda_ - b1))
             temp = torch.logical_and(M < 1e-6, b.amin(dim=2) >= 0)
             Dp[temp, ...] = 0
 
@@ -376,9 +361,12 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
 
             warp = param_update(warp, Dp, 'affine')
             fitt.append({'warp_p': warp[:, :, :2, :]})
-            Dps = torch.zeros(B, C, 3, 3).to(device=dev)
+            Dps = torch.zeros(B, C, 3, 3, dtype=dt, device=dev)
             Dps[:, :, :2, :] = Dp
             p = p + Dps
+
+            if torch.norm(Dp) < 1e-9:
+                return fitt
 
             wrpd = spatial_interp(wimage, p, 'linear',
                                   'affine', xvector, yvector)
@@ -390,35 +378,63 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             qwrpd = torch.nan_to_num(qwrpd, nan=1.0, posinf=1.0, neginf=1.0)
             qwrpd[qwrpd == 0.0] = 1.0
 
+        warp = next_level(warp, 'affine', False)
+        warp[:, :, -1, -1] = 0.
+
     return fitt
 
 
-if __name__ == '__main__':
-    from scipy.io import loadmat
+if __name__ == "__main__":
+    import h5py
+    import matplotlib.pyplot as plt
     from ComputePointError import ComputePointError
 
-    data = loadmat('/Users/ltopalis/Desktop/παπαρια/checkMatlab.mat')['data']
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dtype = torch.float64
 
-    dtype = torch.float32
+    # res = torch.zeros(10_000, dtype=dtype, device=device)
+    res = loadmat(
+        "/home/ltopalis/Desktop/image-alignment-using-nn/pixel_ecc_affine/levels_3_results.mat")['results']
+    res = torch.from_numpy(res).to(dtype=dtype, device=device).squeeze()
 
-    m = torch.zeros(1, 2, 3)
+    for sel in [7685, 7686, 7687, 7688, 7689, 7690, 7691, 7692, 7693, 7694, 7695, 7696,
+                7697, 7698, 7699, 7700, 7701, 7702, 7703, 7704, 7705, 7706, 7707, 7708,
+                7709, 7710, 7711, 7712, 7713, 7714, 7715, 7716, 7717, 7718, 7719, 7720,
+                7721, 7722, 7723, 7724, 7725, 7726, 7727, 7728, 7729, 7730, 7731, 7732,
+                7733, 7734, 7735, 7736, 7737, 7738, 7739, 7740, 7741, 7742, 7743, 7744,
+                7745, 7746, 7747, 7748, 7749]:
 
-    img = torch.from_numpy(data['img'][0][0]).unsqueeze(
-        0).unsqueeze(0).to(dtype)
-    tmplt = torch.from_numpy(data['tmplt'][0][0]).unsqueeze(
-        0).unsqueeze(0).to(dtype)
-    p_init = torch.from_numpy(data['p_init'][0][0]).unsqueeze(
-        0).unsqueeze(0).to(dtype)
-    warp_p = torch.from_numpy(data['fitt'][0][0]).unsqueeze(
-        0).unsqueeze(0).to(dtype)
-    template_affine = torch.from_numpy(
-        data['template_affine'][0][0]).unsqueeze(0).to(dtype)
-    test_pts = torch.from_numpy(
-        data['test_pts'][0][0]).unsqueeze(0).to(dtype)
+        with h5py.File("dataset_matlab.hdf5", "r") as f:
+            test_pts = f['test_pts'][sel]
+            template_affine = f['template_affine'][sel]
+            m = f['m'][sel]
+            img = f['img'][sel]
+            tmplt = f['tmplt'][sel]
+            p_init = f['p_init'][sel]
 
-    fitt = ECC_PIXEL_IA(img, tmplt, p_init)
+        img = torch.from_numpy(
+            img).to(dtype=dtype, device=device).unsqueeze(0).unsqueeze(0)
+        tmplt = torch.from_numpy(
+            tmplt).to(dtype=dtype, device=device).unsqueeze(0).unsqueeze(0)
+        p_init = torch.from_numpy(
+            p_init).to(dtype=dtype, device=device).unsqueeze(0).unsqueeze(0)
+        test_pts = torch.from_numpy(test_pts).to(
+            dtype=dtype, device=device).unsqueeze(0)
+        template_affine = torch.from_numpy(template_affine).to(
+            dtype=dtype, device=device).unsqueeze(0)
+        m = torch.from_numpy(m).to(dtype=dtype, device=device).unsqueeze(0)
 
-    j = ComputePointError(test_pts, template_affine, fitt[-1]['warp_p'], m)
-    j_ = ComputePointError(test_pts, template_affine, warp_p, m)
+        out = ECC_PIXEL_IA(img, tmplt, p_init)
 
-    print(j.item(), j_.item())
+        rms = ComputePointError(
+            test_pts, template_affine, out[-1]['warp_p'], m)
+
+        res[sel] = rms
+
+        if (sel + 1) % 25 == 0:
+            print(f'{sel + 1} samples have been computed')
+            savemat("/home/ltopalis/Desktop/image-alignment-using-nn/pixel_ecc_affine/levels_3_results.mat", mdict={
+                    "results": res.detach().cpu()})
+
+    savemat("/home/ltopalis/Desktop/image-alignment-using-nn/pixel_ecc_affine/levels_3_results.mat",
+            mdict={"results": res.detach().cpu()})

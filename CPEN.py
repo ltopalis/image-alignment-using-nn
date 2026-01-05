@@ -1,3 +1,4 @@
+from Dataset import Dataset
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,9 +26,10 @@ class WeightedChannelSum(nn.Module):
             assert length is not None, "για per_position πρέπει να ξέρεις L ή να χρησιμοποιήσεις άλλο μηχανισμό"
             param = torch.zeros(channels, length)
             param[0, :] = 1
-            self.raw_w = nn.Parameter(param)
+            self.raw_w = nn.Parameter(param, requires_grad=False)
         else:
-            self.raw_w = nn.Parameter(torch.zeros(channels))
+            self.raw_w = nn.Parameter(
+                torch.zeros(channels), requires_grad=False)
 
     def forward(self, x):
         # x: (B, C, L) όπου B μπορεί να είναι οτιδήποτε
@@ -55,10 +57,7 @@ class CPEN(nn.Module):
         super().__init__()
         self.levels = levels
         self.out_ch = out_channels
-        self.models = nn.ModuleList(
-            [CNN(in_ch=1, hidden_ch=32, out_ch=self.out_ch, downsampling=True, level=l)
-             for l in range(levels)][::-1]
-        )
+        self.model = CNN(in_ch=1, hidden_ch=32, out_ch=self.out_ch)
         self.aggrigator = WeightedChannelSum(
             channels=33, per_position=True, length=6)  # nn.Sequential(
         #     nn.Linear(6, 32),
@@ -66,6 +65,7 @@ class CPEN(nn.Module):
         #     nn.Linear(32, 1)
 
         # )
+
         self.dev = device
         self.dt = dtype
         self.to(device=device, dtype=dtype)
@@ -79,47 +79,32 @@ class CPEN(nn.Module):
                 warped, template, levels=self.levels)
             init_p = init_p.unsqueeze(1).repeat(1, 33, 1, 1)
 
-        for i, model in enumerate(self.models):
-            wimage = model(warped).to(dtype=self.dt, device=self.dev)
-            tmplt = model(template).to(dtype=self.dt, device=self.dev)
+        wimage = self.model(warped).to(dtype=self.dt, device=self.dev)
+        tmplt = self.model(template).to(dtype=self.dt, device=self.dev)
 
-            wimage = torch.cat(
-                [warped[:, :, ::2**(self.levels-i-1), ::2**(self.levels-i-1)], wimage], dim=1)
-            tmplt = torch.cat(
-                [template[:, :, ::2**(self.levels-i-1), ::2**(self.levels-i-1)], tmplt], dim=1)
+        wimage = torch.cat([warped[:, :, :, :], wimage], dim=1)
+        tmplt = torch.cat([tmplt[:, :, :, :], template], dim=1)
 
-            print('model ' + str(i))
+        with torch.no_grad():
+            a = compute_initial_motion(
+                wimage[:, 0, :, :], tmplt[:, 0, :, :], levels=0)
+            a = a.unsqueeze(1).repeat(1, 33, 1, 1)
 
-            # plt.figure()
-            # plt.subplot(1, 2, 1)
-            # plt.imshow(wimage[0, 1, :, :].squeeze(
-            # ).detach().cpu(), cmap=plt.cm.gray)
-            # plt.subplot(1, 2, 2)
-            # plt.imshow(tmplt[0, 1, :, :].squeeze(
-            # ).detach().cpu(), cmap=plt.cm.gray)
-            # plt.savefig(f'a/model_{i}.png', dpi=200)
+        B, C, H, W = wimage.shape
 
-            B, C, H, W = wimage.shape
-
-            if H < 30 or W < 30:
-                continue
-
-            out = ECC_PIXEL_IA(wimage, tmplt, init_p)
-            init_p = out[-1]['warp_p']
-            init_p = next_level(init_p, transform='affine', high_flag=False)
-            # print(i, init_p[0, 0:3, :, :])
+        for batch in range(B):
+            for chan in range(C):
+                out = ECC_PIXEL_IA(wimage[batch:batch+1, chan:chan+1, :, :], tmplt[batch:batch+1,
+                                   chan:chan+1, :, :], init_p[batch:batch+1, chan:chan+1, :, :])
+                init_p[batch, chan, :, :] = out[-1]['warp_p'].squeeze()
 
         init = init_p.view(B, C, -1)
         logits = self.aggrigator(init)
-        print(logits, wimage[0, 1, :, :])
-
-        # print(init)
-        # print(logits)
 
         return logits.view(B, 2, 3)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and False:
     from Dataset import Dataset
 
     dt = torch.float32
@@ -139,3 +124,20 @@ if __name__ == '__main__':
         pred = model(template, wimage)
 
         print(pred)
+
+
+if __name__ == "__main__":
+    dt = torch.float32
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    model = CPEN(device=dev, dtype=dt, levels=1)
+
+    d = Dataset('data/dataset/data_01.mat', dtype=dt, device=dev)
+    data = d[0]
+
+    tmplt = data['template'].unsqueeze(0)
+    wimage = data['template'][:, 100:228, 100:228].unsqueeze(0)
+
+    pre = model(tmplt, wimage)
+
+    print(pre)
