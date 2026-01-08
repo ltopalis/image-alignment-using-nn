@@ -19,7 +19,7 @@ class WeightedChannelSum(nn.Module):
     def __init__(self, channels, length=None, per_position=False, normalize=True):
         super().__init__()
         self.channels = channels
-        self.length = length  # αν None, δεν υποστηρίζουμε per_position=True με fixed L
+        self.length = length
         self.per_position = per_position
         self.normalize = normalize
         if per_position:
@@ -32,7 +32,6 @@ class WeightedChannelSum(nn.Module):
                 torch.zeros(channels), requires_grad=False)
 
     def forward(self, x):
-        # x: (B, C, L) όπου B μπορεί να είναι οτιδήποτε
         B, C, L = x.shape
         assert C == self.channels
         if self.per_position:
@@ -53,13 +52,14 @@ class WeightedChannelSum(nn.Module):
 
 
 class CPEN(nn.Module):
-    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float32):
+    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float64):
         super().__init__()
         self.levels = levels
         self.out_ch = out_channels
         self.model = CNN(in_ch=1, hidden_ch=32, out_ch=self.out_ch)
         self.aggrigator = WeightedChannelSum(
-            channels=33, per_position=True, length=6)  # nn.Sequential(
+            # nn.Sequential(
+            channels=out_channels+1, per_position=True, length=6)
         #     nn.Linear(6, 32),
         #     nn.ReLU(inplace=True),
         #     nn.Linear(32, 1)
@@ -77,7 +77,7 @@ class CPEN(nn.Module):
         with torch.no_grad():
             init_p = compute_initial_motion(
                 warped, template, levels=self.levels)
-            init_p = init_p.unsqueeze(1).repeat(1, 33, 1, 1)
+            init_p = init_p.unsqueeze(1).repeat(1, self.out_ch + 1, 1, 1)
 
         wimage = self.model(warped).to(dtype=self.dt, device=self.dev)
         tmplt = self.model(template).to(dtype=self.dt, device=self.dev)
@@ -88,7 +88,7 @@ class CPEN(nn.Module):
         with torch.no_grad():
             a = compute_initial_motion(
                 wimage[:, 0, :, :], tmplt[:, 0, :, :], levels=0)
-            a = a.unsqueeze(1).repeat(1, 33, 1, 1)
+            a = a.unsqueeze(1).repeat(1, self.out_ch + 1, 1, 1)
 
         B, C, H, W = wimage.shape
 

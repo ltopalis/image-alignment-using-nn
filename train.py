@@ -16,8 +16,8 @@ if __name__ == '__main__':
     dt = torch.float64
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    num_epochs = 20
-    batch = 3
+    num_epochs = 10
+    batch = 1
     save_path = os.path.join(".", "pretrained_models")
     h5_path = '/home/ltopalis/Desktop/image-alignment-using-nn/dataset_matlab.hdf5'
 
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     print(
         f"Total samples: {N}, Train: {n_train}, Test: {n_test}")
 
-    model = CPEN(levels=3, out_channels=32, device=dev, dtype=dt)
+    model = CPEN(levels=3, out_channels=10, device=dev, dtype=dt)
     model = model.to(device=dev, dtype=dt)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -51,10 +51,17 @@ if __name__ == '__main__':
     avg_loss = []
     str_train_results = "epoch        min_loss     max_loss     average_loss    elapsed_time_s\n"
 
+    for p in model.aggrigator.parameters():
+        p.requires_grad = False
+
     start_time = time.perf_counter()
     for epoch in range(num_epochs):
         print(f'======== epoch: {(epoch + 1):2} ========')
         results[epoch] = {'rms': [], 'idxs': []}
+
+        if epoch == num_epochs // 2:
+            for p in model.aggrigator.parameters():
+                p.requires_grad = False
 
         model.train()
         epoch_sum_loss = 0.0
