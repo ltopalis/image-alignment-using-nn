@@ -1,3 +1,0 @@
-Total samples: 10000, Train: 8000, Test: 2000
-======== epoch:  1 ========
-Epoch 1 batches:   0%|          | 0/2667 [00:00<?, ?it/s]Epoch 1 batches:   0%|          | 1/2667 [1:16:01<3378:03:09, 4561.51s/it]Epoch 1 batches:   0%|          | 2/2667 [2:32:01<3376:12:47, 4560.74s/it]
