@@ -76,7 +76,7 @@ class CPEN(nn.Module):
 
         with torch.no_grad():
             init_p = compute_initial_motion(
-                warped, template, levels=self.levels)
+                warped, template, levels=0)
             init_p = init_p.unsqueeze(1).repeat(1, self.out_ch + 1, 1, 1)
 
         wimage = self.model(warped).to(dtype=self.dt, device=self.dev)
@@ -102,28 +102,6 @@ class CPEN(nn.Module):
         logits = self.aggrigator(init)
 
         return logits.view(B, 2, 3)
-
-
-if __name__ == '__main__' and False:
-    from Dataset import Dataset
-
-    dt = torch.float32
-    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    model = CPEN(device=dev, dtype=dt, levels=3)
-
-    d = Dataset('data/d.mat', dtype=dt, device=dev)
-
-    j = 1
-    for i in range(1):
-        # print(i)
-        a = d[i]
-
-        wimage = a['wimage'].unsqueeze(0).to(dtype=dt, device=dev)
-        template = a['template'].unsqueeze(0).to(dtype=dt, device=dev)
-        pred = model(template, wimage)
-
-        print(pred)
 
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
         if epoch == num_epochs // 2:
             for p in model.aggrigator.parameters():
-                p.requires_grad = False
+                p.requires_grad = True
 
         model.train()
         epoch_sum_loss = 0.0
