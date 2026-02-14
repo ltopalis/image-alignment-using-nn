@@ -1,19 +1,17 @@
 import torch
 
-torch.set_default_dtype(torch.float64)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
-
 
 def param_update(warp_in: torch.Tensor, delta_p: torch.Tensor, transform: str):
     B, C, _, _ = warp_in.shape
     dev, dt = warp_in.device, warp_in.dtype
 
     if transform == 'affine':
-        warp_out = torch.zeros((B, C, 3, 3), dtype=dt, device=dev)
+        warp_out = warp_in.clone()
         warp_out[:, :, :2, :] = warp_in[:, :, :2, :] + delta_p
 
         warp_out[:, :, 2, 2] = 1.
+        warp_out[:, :, 2, 1] = 0.
+        warp_out[:, :, 2, 0] = 0.
 
     return warp_out
 

@@ -1,4 +1,6 @@
-from Dataset import Dataset
+import time
+from Dataset import FirstDataset, collate_batch
+from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,63 +10,34 @@ from translation_cnn import compute_initial_motion
 from pixel_ecc_affine.ECC_PIXEL_IA import ECC_PIXEL_IA
 from pixel_ecc_affine.next_level import next_level
 
-torch.set_default_dtype(torch.float32)
-torch.set_printoptions(precision=12)
-torch.use_deterministic_algorithms(False)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
 
-
-class WeightedChannelSum(nn.Module):
-    def __init__(self, channels, length=None, per_position=False, normalize=True):
+class ChannelAggregator(nn.Module):
+    def __init__(self, num_channels, temperature=1.0):
         super().__init__()
-        self.channels = channels
-        self.length = length
-        self.per_position = per_position
-        self.normalize = normalize
-        if per_position:
-            assert length is not None, "για per_position πρέπει να ξέρεις L ή να χρησιμοποιήσεις άλλο μηχανισμό"
-            param = torch.zeros(channels, length)
-            param[0, :] = 1
-            self.raw_w = nn.Parameter(param, requires_grad=False)
-        else:
-            self.raw_w = nn.Parameter(
-                torch.zeros(channels), requires_grad=False)
+
+        self.num_channels = num_channels
+        self.temperature = temperature
+
+        self.logits = nn.Parameter(torch.zeros(num_channels))
+
+        with torch.no_grad():
+            self.logits[0] = 1.0
+            self.logits[1:] = 0.0
 
     def forward(self, x):
-        B, C, L = x.shape
-        assert C == self.channels
-        if self.per_position:
-            assert L == self.length, "per_position απαιτεί γνωστό fixed L"
-            w = self.raw_w
-            if self.normalize:
-                w = F.softmax(w, dim=0)
-            w = w.unsqueeze(0)          # (1, C, L)
-            out = (x * w).sum(dim=1)    # -> (B, L)
-            return out
-        else:
-            w = self.raw_w
-            if self.normalize:
-                w = F.softmax(w, dim=0)
-            w = w.view(1, C, 1)        # (1, C, 1) broadcast σε B,L
-            out = (x * w).sum(dim=1)   # -> (B, L)
-            return out
+        weights = F.softmax(self.logits / self.temperature, dim=0)
+        out = (x * weights.view(1, -1, 1)).sum(dim=1)
+
+        return out
 
 
 class CPEN(nn.Module):
-    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float64):
+    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float32):
         super().__init__()
         self.levels = levels
         self.out_ch = out_channels
         self.model = CNN(in_ch=1, hidden_ch=32, out_ch=self.out_ch)
-        self.aggrigator = WeightedChannelSum(
-            # nn.Sequential(
-            channels=out_channels+1, per_position=True, length=6)
-        #     nn.Linear(6, 32),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear(32, 1)
-
-        # )
+        self.aggregator = ChannelAggregator(self.out_ch + 1, temperature=0.1)
 
         self.dev = device
         self.dt = dtype
@@ -72,50 +45,63 @@ class CPEN(nn.Module):
 
     def forward(self,
                 warped: torch.Tensor,
-                template: torch.Tensor,):
+                template: torch.Tensor,
+                init_p: torch.Tensor = None) -> torch.Tensor:
 
-        with torch.no_grad():
-            init_p = compute_initial_motion(
-                warped, template, levels=0)
-            init_p = init_p.unsqueeze(1).repeat(1, self.out_ch + 1, 1, 1)
+        init_p = init_p.unsqueeze(1).expand(-1, self.out_ch + 1, -1, -1)
 
         wimage = self.model(warped).to(dtype=self.dt, device=self.dev)
         tmplt = self.model(template).to(dtype=self.dt, device=self.dev)
 
         wimage = torch.cat([warped[:, :, :, :], wimage], dim=1)
-        tmplt = torch.cat([tmplt[:, :, :, :], template], dim=1)
-
-        with torch.no_grad():
-            a = compute_initial_motion(
-                wimage[:, 0, :, :], tmplt[:, 0, :, :], levels=0)
-            a = a.unsqueeze(1).repeat(1, self.out_ch + 1, 1, 1)
+        tmplt = torch.cat([template[:, :, :, :], tmplt], dim=1)
 
         B, C, H, W = wimage.shape
 
-        for batch in range(B):
-            for chan in range(C):
-                out = ECC_PIXEL_IA(wimage[batch:batch+1, chan:chan+1, :, :], tmplt[batch:batch+1,
-                                   chan:chan+1, :, :], init_p[batch:batch+1, chan:chan+1, :, :])
-                init_p[batch, chan, :, :] = out[-1]['warp_p'].squeeze()
+        out = ECC_PIXEL_IA(wimage, tmplt, init_p, in_levels=self.levels)
 
-        init = init_p.view(B, C, -1)
-        logits = self.aggrigator(init)
+        init = out.reshape(B, C, -1)
+        logits = self.aggregator(init)
 
         return logits.view(B, 2, 3)
 
 
 if __name__ == "__main__":
+    torch.set_default_device("cpu")
     dt = torch.float32
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = CPEN(device=dev, dtype=dt, levels=1)
 
-    d = Dataset('data/dataset/data_01.mat', dtype=dt, device=dev)
-    data = d[0]
+    h5_path = '/home/ltopalis/Desktop/image-alignment-using-nn/dataset_matlab.hdf5'
+    full_ds = FirstDataset(h5_path)
+    N = len(full_ds)
+    n_train = int(0.8 * N)
+    n_test = N - n_train
 
-    tmplt = data['template'].unsqueeze(0)
-    wimage = data['template'][:, 100:228, 100:228].unsqueeze(0)
+    batch = 5
 
-    pre = model(tmplt, wimage)
+    train_ds, test_ds = random_split(full_ds, [n_train, n_test],
+                                     generator=torch.Generator().manual_seed(42))
 
-    print(pre)
+    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True,
+                              num_workers=4, pin_memory=torch.cuda.is_available(),
+                              persistent_workers=True, prefetch_factor=2,
+                              collate_fn=collate_batch)
+    test_loader = DataLoader(test_ds, batch_size=batch, shuffle=False,
+                             num_workers=2, pin_memory=torch.cuda.is_available(),
+                             persistent_workers=True, collate_fn=collate_batch)
+
+    model = CPEN(levels=3, out_channels=32, device=dev, dtype=dt)
+    model = model.to(device=dev, dtype=dt)
+
+    for data in train_loader:
+        img = data['img'].unsqueeze(1).to(dtype=dt, device=dev)
+        tmplt = data['tmplt'].unsqueeze(1).to(dtype=dt, device=dev)
+        p_init = data['p_init'].to(dtype=dt, device=dev)
+
+        start = time.perf_counter()
+        out = model(img, tmplt, p_init)
+        end = time.perf_counter()
+        print(
+            f"Output shape: {out.shape}, Time taken: {end - start:.4f} seconds")

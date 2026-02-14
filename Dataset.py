@@ -165,8 +165,7 @@ class FirstDataset(torch.utils.data.Dataset):
         self.length = self.file["M"].shape[0]
 
     def __len__(self):
-        # return self.length
-        return 625
+        return self.length
 
     def __getitem__(self, i):
         return {

@@ -1,9 +1,6 @@
 import torch
 import torch.nn.functional as F
 
-torch.set_default_dtype(torch.float64)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
 
 # --------------------- fspecial ---------------------
 
@@ -139,12 +136,12 @@ def filter2(h: torch.Tensor,
 
 def grad(img):
     # img: (B,C,H,W)
-    gx = torch.empty_like(img)  # d/dx (στήλες, dim=3)
+    gx = torch.zeros_like(img)  # d/dx (στήλες, dim=3)
     gx[..., 1:-1] = (img[..., 2:] - img[..., :-2]) * 0.5
     gx[..., 0] = img[..., 1] - img[..., 0]
     gx[..., -1] = img[..., -1] - img[..., -2]
 
-    gy = torch.empty_like(img)  # d/dy (γραμμές, dim=2)
+    gy = torch.zeros_like(img)  # d/dy (γραμμές, dim=2)
     gy[:, :, 1:-1, :] = (img[:, :, 2:, :] - img[:, :, :-2, :]) * 0.5
     gy[:, :, 0, :] = img[:, :, 1, :] - img[:, :, 0, :]
     gy[:, :, -1, :] = img[:, :, -1, :] - img[:, :, -2, :]

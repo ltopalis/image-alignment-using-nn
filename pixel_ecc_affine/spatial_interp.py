@@ -1,14 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-torch.set_default_dtype(torch.float64)
-torch.set_printoptions(precision=12)
-torch.use_deterministic_algorithms(False)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
 
-
-@torch.no_grad()
 def spatial_interp(
     img: torch.Tensor,
     warp: torch.Tensor,
@@ -34,7 +27,7 @@ def spatial_interp(
     o = torch.ones(len(b), device=dev, dtype=dt)
     xy = torch.stack((a, b, o), dim=0)
 
-    A = w.clone()
+    A = w
     A[:, :, 2, 2] = 1.
 
     xy_prime = A @ xy

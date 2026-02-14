@@ -1,22 +1,14 @@
 import torch
 
-torch.set_default_dtype(torch.float64)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
-
 
 def next_level(warp_in: torch.Tensor, transform: str, high_flag: bool):
+    if transform != 'affine':
+        raise NotImplementedError(f"Transform {transform} not implemented")
+
     warp = warp_in.clone()
-    dev, dt = warp.device, warp.dtype
-    B, C, _, _ = warp.shape
 
-    if high_flag:
-        if transform == 'affine':
-            warp[:, :, :2, -1] /= 2
-
-    else:
-        if transform == 'affine':
-            warp[:, :, :2, -1] *= 2
+    scale = 0.5 if high_flag else 2.
+    warp[:, :, :2, -1] *= scale
 
     return warp
 

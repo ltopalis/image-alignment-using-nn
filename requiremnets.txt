@@ -5,3 +5,5 @@ torchvision
 scikit-image
 opencv-python
 h5py
+tqdm
+kornia

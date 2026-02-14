@@ -2,25 +2,17 @@ import torch
 import torch.nn.functional as F
 from kornia.filters import gaussian_blur2d
 
-torch.set_default_dtype(torch.float64)
-torch.set_default_device(torch.device(
-    'cuda' if torch.cuda.is_available() else 'cpu'))
-
 
 def make_pyramid(img: torch.Tensor, levels: int, type_: str) -> list:
-    dt, dev = img.dtype, img.device
-
-    B, C, _, _ = img.shape
-
-    gpyramid = [img.clone()]
-    lpyramid = []
+    gpyramid = [img]
+    # lpyramid = []
     padsize = 4
+    sigma = (1.0, 1.0)
 
     for i in range(2, levels + 1):
         prev = gpyramid[-1]
 
         ks = (2 ** (levels - i + 4)) + 1
-        sigma = (1.0, 1.0)
 
         temp = F.pad(prev, (padsize, padsize, padsize, padsize),
                      mode='constant', value=1.0)
@@ -30,15 +22,15 @@ def make_pyramid(img: torch.Tensor, levels: int, type_: str) -> list:
 
         r0 = padsize
         r1 = -padsize if padsize > 0 else None
-        g_dec = new[:, :, r0:r1:2, r0:r1:2].contiguous()
+        g_dec = new[:, :, r0:r1:2, r0:r1:2]
 
-        g_blur_same = new[:, :, r0:r1, r0:r1].contiguous()
-        lap = prev - g_blur_same
+        # g_blur_same = new[:, :, r0:r1, r0:r1]
+        # lap = prev - g_blur_same
 
         gpyramid.append(g_dec)
-        lpyramid.append(lap)
+        # lpyramid.append(lap)
 
-    return gpyramid if type_ == 'gaussian' else lpyramid
+    return gpyramid  # if type_ == 'gaussian' else lpyramid
 
 
 if __name__ == '__main__':
