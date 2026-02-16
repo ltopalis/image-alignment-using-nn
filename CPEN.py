@@ -5,10 +5,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from cnn import CNN
-import matplotlib.pyplot as plt
-from translation_cnn import compute_initial_motion
 from pixel_ecc_affine.ECC_PIXEL_IA import ECC_PIXEL_IA
-from pixel_ecc_affine.next_level import next_level
+
+
+def check_finite(name, x):
+    if not torch.isfinite(x).all():
+        with torch.no_grad():
+            fin = torch.isfinite(x)
+            print(f"[NON-FINITE] {name}: finite={fin.float().mean().item():.4f} "
+                  f"min={torch.nan_to_num(x).min().item():.4e} "
+                  f"max={torch.nan_to_num(x).max().item():.4e}")
+        raise RuntimeError(f"Non-finite detected at {name}")
 
 
 class ChannelAggregator(nn.Module):
@@ -21,18 +28,35 @@ class ChannelAggregator(nn.Module):
         self.logits = nn.Parameter(torch.zeros(num_channels))
 
         with torch.no_grad():
-            self.logits[0] = 1.0
+            self.logits[0] = 2.0
             self.logits[1:] = 0.0
 
     def forward(self, x):
-        weights = F.softmax(self.logits / self.temperature, dim=0)
+
+        temp = self.logits / torch.clamp(
+            torch.tensor(self.temperature, device=self.logits.device,
+                         dtype=self.logits.dtype),
+            1e-3, 10.0
+        )
+
+        finite = torch.isfinite(temp)
+
+        if not finite.all():
+            temp = torch.zeros_like(temp)
+            temp[0] = 2.0
+
+        weights = F.softmax(temp, dim=0)
+        weights = torch.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
+        weights = weights / (weights.sum() + 1e-12)
+
+        check_finite("agg_weights", weights)
         out = (x * weights.view(1, -1, 1)).sum(dim=1)
 
         return out
 
 
 class CPEN(nn.Module):
-    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float32):
+    def __init__(self, levels=4, out_channels=32, device='cpu', dtype=torch.float32, DEBUG=False):
         super().__init__()
         self.levels = levels
         self.out_ch = out_channels
@@ -41,6 +65,7 @@ class CPEN(nn.Module):
 
         self.dev = device
         self.dt = dtype
+        self.DEBUG = DEBUG
         self.to(device=device, dtype=dtype)
 
     def forward(self,
@@ -53,17 +78,30 @@ class CPEN(nn.Module):
         wimage = self.model(warped).to(dtype=self.dt, device=self.dev)
         tmplt = self.model(template).to(dtype=self.dt, device=self.dev)
 
+        wimage = torch.nan_to_num(wimage, nan=0.0, posinf=0.0, neginf=0.0)
+        tmplt = torch.nan_to_num(tmplt, nan=0.0, posinf=0.0, neginf=0.0)
+
         wimage = torch.cat([warped[:, :, :, :], wimage], dim=1)
         tmplt = torch.cat([template[:, :, :, :], tmplt], dim=1)
 
         B, C, H, W = wimage.shape
 
-        out = ECC_PIXEL_IA(wimage, tmplt, init_p, in_levels=self.levels)
+        out = ECC_PIXEL_IA(wimage, tmplt, init_p,
+                           in_levels=self.levels, DEBUG=self.DEBUG)
 
         init = out.reshape(B, C, -1)
+        init = torch.nan_to_num(init, nan=0.0, posinf=0.0, neginf=0.0)
         logits = self.aggregator(init)
 
-        return logits.view(B, 2, 3)
+        logits = logits.view(B, 2, 3)
+
+        if self.DEBUG:
+            check_finite("cpen_init_pre_fix", init)
+            check_finite("cpen_init_post_fix", init)
+            check_finite("cpen_logits", logits)
+            check_finite("cpen_logits", logits)
+
+        return logits
 
 
 if __name__ == "__main__":

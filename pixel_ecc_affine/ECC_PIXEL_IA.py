@@ -6,7 +6,17 @@ from .next_level import next_level
 from .param_update import param_update
 
 
-def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tensor, in_levels: int = 3):
+def check_finite(name, x):
+    if not torch.isfinite(x).all():
+        with torch.no_grad():
+            fin = torch.isfinite(x)
+            print(f"[NON-FINITE] {name}: finite={fin.float().mean().item():.4f} "
+                  f"min={torch.nan_to_num(x).min().item():.4e} "
+                  f"max={torch.nan_to_num(x).max().item():.4e}")
+        raise RuntimeError(f"Non-finite detected at {name}")
+
+
+def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tensor, in_levels: int = 3, DEBUG: bool = False):
     dt = wimage.dtype
     dev = wimage.device
     eps = 1e-6
@@ -61,8 +71,10 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
         yvector = torch.arange(tH, device=dev, dtype=dt)
 
         wrpd = spatial_interp(wimage, p, 'linear', 'affine', xvector, yvector)
-        wrpd = torch.nan_to_num(wrpd, nan=1.0, posinf=0.0, neginf=0.0)
+        wrpd = torch.nan_to_num(wrpd, nan=1.0, posinf=1.0, neginf=1.0)
         wrpd = torch.where(wrpd == 0.0, 1.0, wrpd)
+        if DEBUG:
+            check_finite("wrpd", wrpd)
 
         ROI_x = torch.arange(tW, device=dev, dtype=dt)
         ROI_y = torch.arange(tH, device=dev, dtype=dt)
@@ -73,9 +85,11 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
         # Template
         g_tmplt_x, g_tmplt_y = grad(tmplt)
         g_tmplt_x1 = g_tmplt_x / (g_tmplt_x ** 2 + g_tmplt_y ** 2 + eps).sqrt()
-        g_tmplt_x1 = g_tmplt_x1.nan_to_num(nan=1.0)
+        g_tmplt_x1 = torch.nan_to_num(
+            g_tmplt_x1, nan=0.0, posinf=0.0, neginf=0.0)
         g_tmplt_y1 = g_tmplt_y / (g_tmplt_x ** 2 + g_tmplt_y ** 2 + eps).sqrt()
-        g_tmplt_y1 = g_tmplt_y1.nan_to_num(nan=1.0)
+        g_tmplt_y1 = torch.nan_to_num(
+            g_tmplt_y1, nan=0.0, posinf=0.0, neginf=0.0)
         g_tmplt_y = g_tmplt_y1
         g_tmplt_x = g_tmplt_x1
 
@@ -107,11 +121,15 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             g_wrpd_yx, g_wrpd_yy = grad(g_wrpd_y)
 
             # Gradient Matrix
-            gx = g_wrpd_x.transpose(3, 2).reshape(B, C, -1)
-            gy = g_wrpd_y.transpose(3, 2).reshape(B, C, -1)
+            gx = g_wrpd_x.transpose(-1, -2).reshape(B, C, -1)
+            gy = g_wrpd_y.transpose(-1, -2).reshape(B, C, -1)
 
             gx = torch.nan_to_num(gx, nan=0.0, posinf=0.0, neginf=0.0)
             gy = torch.nan_to_num(gy, nan=0.0, posinf=0.0, neginf=0.0)
+
+            if DEBUG:
+                check_finite("gx", gx)
+                check_finite("gy", gy)
 
             Ng2 = gx * gx + gy * gy
             Ng2 = torch.clamp(Ng2, min=1e-12)
@@ -133,15 +151,20 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             H10 = g_wrpd_yx.transpose(-1, -2).reshape(B, C, Tdim)
             H11 = g_wrpd_yy.transpose(-1, -2).reshape(B, C, Tdim)
 
-            H00 = torch.nan_to_num(H00, nan=1.0, posinf=0.0, neginf=0.0)
-            H01 = torch.nan_to_num(H01, nan=1.0, posinf=0.0, neginf=0.0)
-            H10 = torch.nan_to_num(H10, nan=1.0, posinf=0.0, neginf=0.0)
-            H11 = torch.nan_to_num(H11, nan=1.0, posinf=0.0, neginf=0.0)
+            H00 = torch.nan_to_num(H00, nan=0.0, posinf=0.0, neginf=0.0)
+            H01 = torch.nan_to_num(H01, nan=0.0, posinf=0.0, neginf=0.0)
+            H10 = torch.nan_to_num(H10, nan=0.0, posinf=0.0, neginf=0.0)
+            H11 = torch.nan_to_num(H11, nan=0.0, posinf=0.0, neginf=0.0)
             # H = torch.stack([
             #     torch.stack([H00, H01], dim=2),
             #     torch.stack([H10, H11], dim=2)
             # ], dim=2)
             # H = torch.nan_to_num(H, nan=1.0, posinf=0.0, neginf=0.0)
+            if DEBUG:
+                check_finite("H00", H00)
+                check_finite("H11", H11)
+                check_finite("H10", H10)
+                check_finite("H01", H01)
 
 # # Positiveness
 #             Determ = H[:, :, 0, 0, :] * \
@@ -151,9 +174,9 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             # Trace = H[:, :, 0, 0, :] + H[:, :, 1, 1, :]
             Trace = H00 + H11
             Phi_1 = (Determ_t / (Determ + eps)).view(B, C,
-                                                     tW, tH)  .transpose(-1, -2)
+                                                     tW, tH).transpose(-1, -2)
             Phi_2 = (Trace_t / (N_G + eps) - (Determ_t / (Determ + eps))
-                     * Trace / (N_G + eps)).view(B, C, tW, tH)   .transpose(3, 2)
+                     * Trace / (N_G + eps)).view(B, C, tW, tH).transpose(3, 2)
             Detector = ((Phi_2.abs() * (Phi_1 > 0)) < 1e-4)
 
             # mesh (Detector)
@@ -222,6 +245,9 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
             A = 0.5 * (A + A.transpose(-1, -2))
             diag_mean = A.diagonal(dim1=-2, dim2=-1).mean(dim=-1, keepdim=True)
             A = A + (1e-3 * diag_mean).unsqueeze(-1) * I6
+            if DEBUG:
+                check_finite("A", A)
+                check_finite("rhs", rhs)
 
             try:
                 L = torch.linalg.cholesky(A)
@@ -247,8 +273,12 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
 
             wrpd = spatial_interp(wimage, p, 'linear',
                                   'affine', xvector, yvector)
-            wrpd = torch.nan_to_num(wrpd, nan=1.0, posinf=0.0, neginf=0.0)
+            wrpd = torch.nan_to_num(wrpd, nan=1.0, posinf=1.0, neginf=1.0)
             wrpd = torch.where(wrpd == 0.0, 1.0, wrpd)
+            if DEBUG:
+                check_finite("Dp", Dp)
+                check_finite("warp", warp)
+                check_finite("wrpd", wrpd)
 
         warp = next_level(warp, 'affine', False)
         warp = torch.nan_to_num(warp, nan=0.0, posinf=0.0, neginf=0.0)
@@ -257,6 +287,8 @@ def ECC_PIXEL_IA(wimage: torch.Tensor, template: torch.Tensor, init: torch.Tenso
         mask[:, :, -1, -1] = 1.0
         warp = warp * (1 - mask)
         warp = torch.nan_to_num(warp, nan=0.0, posinf=0.0, neginf=0.0)
+        if DEBUG:
+            check_finite("warp", warp)
 
     return fitt
 

@@ -2,20 +2,13 @@ import torch
 import torch.nn.functional as F
 
 
-# --------------------- fspecial ---------------------
-
-
 def fspecial(kind: str,
-             size,                     # int or (kH, kW)
+             size,
              *,
-             sigma=None,               # for 'gaussian' / 'log'
-             laplacian_ks: int = 4,    # 4 or 8 neighbors
+             sigma=None,
+             laplacian_ks: int = 4,
              device=None,
              dtype=torch.float32):
-    """
-    Returns kernel shaped (1, 1, kH, kW) on the requested device/dtype.
-    Supported kinds: 'gaussian', 'log', 'average', 'laplacian', 'sobelx', 'sobely'
-    """
     if isinstance(size, int):
         kH = kW = size
     else:
@@ -32,7 +25,6 @@ def fspecial(kind: str,
 
     elif kind == "gaussian":
         if sigma is None:
-            # MATLAB-like heuristic if not provided
             sigma = 0.3*((kH+kW)/2 - 1) + 0.8
         sy = sx = float(sigma) if not isinstance(
             sigma, (tuple, list)) else sigma
@@ -52,7 +44,7 @@ def fspecial(kind: str,
         r2 = xx**2 + yy**2
         g = torch.exp(-r2 / (2*sx**2))
         k = ((r2 - 2*sx**2) / (sx**4)) * g
-        k -= k.mean()              # zero mean
+        k -= k.mean()
         k /= (k.abs().sum() + 1e-12)
 
     elif kind == "laplacian":
@@ -83,24 +75,15 @@ def fspecial(kind: str,
     else:
         raise ValueError(f"Unsupported kind: {kind}")
 
-    return k.unsqueeze(0).unsqueeze(0)  # (1,1,kH,kW)
+    return k.unsqueeze(0).unsqueeze(0)
 
 
-# --------------------- filter2 ---------------------
 def filter2(h: torch.Tensor,
             x: torch.Tensor,
             *,
-            mode: str = "corr",      # 'corr' (MATLAB filter2) or 'conv'
-            padding: str = "same",   # 'same' | 'valid' | int | (padW, padH)
+            mode: str = "corr",
+            padding: str = "same",
             channelwise: bool = True):
-    """
-    MATLAB-like 2D filtering for tensors.
-    h: (1,1,kH,kW) or (kH,kW)
-    x: (B,C,H,W)
-    Returns: y with shape (B,C,H,W) for 'same', otherwise appropriate size.
-    - mode='corr' matches MATLAB filter2 (no kernel flip).
-    - mode='conv' flips kernel 180°, like conv2.
-    """
     assert x.ndim == 4
     B, C, H, W = x.shape
     if h.ndim == 2:
@@ -115,7 +98,6 @@ def filter2(h: torch.Tensor,
     else:
         raise ValueError("mode must be 'corr' or 'conv'.")
 
-    # groups = C to apply the same kernel independently per channel
     h_rep = h_use.repeat(C, 1, 1, 1)  # (C,1,kH,kW)
 
     # padding

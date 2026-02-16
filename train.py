@@ -51,12 +51,23 @@ if __name__ == '__main__':
     model = CPEN(levels=4, out_channels=8, device=dev, dtype=dt)
     model = model.to(device=dev, dtype=dt)
 
-    optimizer = torch.optim.Adam([
-        {"params": model.model.parameters(), "lr": 1e-4},
-        {"params": model.aggregator.parameters(), "lr": 1e-5},
-    ])
+    # optimizer = torch.optim.Adam([
+    #     {"params": model.model.parameters(), "lr": 1e-4},
+    #     {"params": model.aggregator.parameters(), "lr": 0},
+    # ])
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer,
+    #     mode='min',
+    #     factor=0.5,
+    #     patience=2,
+    #     threshold=1e-4,
+    #     min_lr=1e-6,
+    # )
+
+    opt_cnn = torch.optim.Adam(model.model.parameters(), lr=1e-4)
+    opt_agg = torch.optim.Adam(model.aggregator.parameters(), lr=0.0)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
+        opt_cnn,
         mode='min',
         factor=0.5,
         patience=2,
@@ -64,32 +75,48 @@ if __name__ == '__main__':
         min_lr=1e-6,
     )
 
-    for p in model.aggregator.parameters():
-        p.requires_grad = False
-
+    train_stats = {}
     start_time = time.perf_counter()
     for epoch in range(1, num_epochs + 1):
         print(f'======== epoch: {(epoch):2} ========')
 
-        if epoch == 5:
-            for p in model.aggregator.parameters():
-                p.requires_grad = True
+        if epoch <= 4:
+            for pg in opt_agg.param_groups:
+                pg["lr"] = 0.0
+            model.aggregator.temperature = 1.0
+        elif epoch <= 6:
+            for pg in opt_agg.param_groups:
+                pg["lr"] = 1e-6
+            model.aggregator.temperature = min(1.0, 0.5 + (epoch - 5) * 0.2)
+        else:
+            for pg in opt_agg.param_groups:
+                pg["lr"] = 1e-5
+            model.aggregator.temperature = min(1.0, 0.7 + (epoch - 6) * 0.1)
 
         epoch_sum_loss = 0.0
         epoch_num_samples = 0
 
         train_loss, max_rms, min_rms = train_one_epoch(
-            model, train_loader, optimizer, dev, dt)
+            model, train_loader, opt_cnn, opt_agg, dev, dt)
         idxs, RMSs = evaluate_one_epoch(model, dev_loader, dev, dt)
 
         if scheduler is not None:
-            scheduler.step(np.mean(RMSs))
-        model.aggregator.temperature = min(1.0, 0.1 + epoch * 0.1)
+            scheduler.step(float(np.mean(RMSs)))
 
         print(f"  Train loss : {train_loss:.4f}")
         print(f"    Max loss : {max_rms:.4f}")
         print(f"    Min loss : {min_rms:.4f}")
         print(f"  Dev loss   : {np.mean(RMSs):.4f}")
+
+        train_stats[epoch] = {
+            "train_loss": train_loss,
+            "max_train_loss": max_rms,
+            "min_train_loss": min_rms,
+            "dev": {
+                "rms": RMSs.detach().cpu(),
+                "idx": idxs.detach().cpu()
+            }
+        }
 
         improved = np.mean(RMSs) < best_rms - min_delta
 
@@ -101,6 +128,9 @@ if __name__ == '__main__':
             print(f"  New best model saved with RMS: {best_rms:.6f}")
         else:
             print(f"  No improvement over best RMS: {best_rms:.6f}")
+
+        with open(os.path.join(save_path, "train_results.json"), "w") as f:
+            json.dump(train_stats, f, indent=4)
 
     total_time = time.perf_counter() - start_time
     print(f'Total time: {total_time:.2f} s')
