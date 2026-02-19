@@ -48,7 +48,7 @@ if __name__ == '__main__':
     print(
         f"Total samples: {N}, Train: {n_train}, Test: {n_test // 2}, Dev: {n_test - n_test // 2}")
 
-    model = CPEN(levels=4, out_channels=8, device=dev, dtype=dt)
+    model = CPEN(levels=4, out_channels=8, device=dev, dtype=dt, DEBUG=True)
     model = model.to(device=dev, dtype=dt)
 
     # optimizer = torch.optim.Adam([
@@ -113,8 +113,8 @@ if __name__ == '__main__':
             "max_train_loss": max_rms,
             "min_train_loss": min_rms,
             "dev": {
-                "rms": RMSs.detach().cpu(),
-                "idx": idxs.detach().cpu()
+                "rms": RMSs,
+                "idx": idxs
             }
         }
 
