@@ -10,8 +10,11 @@ def evaluate_one_epoch(model, dataloader, device='cpu', dtype=torch.float32):
     all_idxs = []
 
     for data in tqdm(dataloader, desc='Evaluating', unit='batch'):
-        img = data['img'].unsqueeze(1).to(dtype=dtype, device=device)
-        tmplt = data['tmplt'].unsqueeze(1).to(dtype=dtype, device=device)
+
+        img = data['img'].unsqueeze(1).to(
+            dtype=dtype, device=device) if data['img'].ndim != 4 else data['img'].to(dtype=dtype, device=device)
+        tmplt = data['tmplt'].unsqueeze(1).to(
+            dtype=dtype, device=device) if data['tmplt'].ndim != 4 else data['tmplt'].to(dtype=dtype, device=device)
         test_pts = data['test_pts'].to(dtype=dtype, device=device)
         template_affine = data['template_affine'].to(
             dtype=dtype, device=device)
